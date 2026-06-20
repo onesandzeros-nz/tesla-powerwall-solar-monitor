@@ -16,30 +16,33 @@
 #define COL_BATT    lv_color_hex(0x66BB6A)
 #define COL_IMPORT  lv_color_hex(0xEF5350)   /* drawing from grid */
 #define COL_EXPORT  lv_color_hex(0x66BB6A)   /* sending to grid   */
+#define COL_BATT_OUT lv_color_hex(0xFFA726)  /* battery discharging */
 
 #define SOLAR_MAX_W       18000.0   /* your solar array nameplate */
 #define BATTERY_CAP_KWH   27.0      /* site_info nameplate_energy_watts (PW3 + Expansion) */
 
 // Bar auto-scale floors (grow to the largest value seen).
-static double s_home_max = 4000.0;
-static double s_grid_max = 4000.0;
+static double s_home_max  = 4000.0;
+static double s_grid_max  = 4000.0;
+static double s_battp_max = 4000.0;
 
 typedef struct { lv_obj_t *value; lv_obj_t *bar; } metric_t;
-static metric_t s_solar, s_home, s_grid;
+static metric_t s_solar, s_home, s_grid, s_batt_pow;
 static lv_obj_t *s_grid_badge, *s_batt_pct, *s_batt_kwh, *s_batt_state, *s_soc_bar;
+static lv_obj_t *s_status;
 
 // A card with a name (left) + value (right) header row and a bar underneath.
 static void make_metric(lv_obj_t *parent, const char *name, lv_color_t accent,
                         bool symmetric, metric_t *out)
 {
     lv_obj_t *card = lv_obj_create(parent);
-    lv_obj_set_size(card, lv_pct(100), 104);
+    lv_obj_set_size(card, lv_pct(100), 96);
     lv_obj_set_style_bg_color(card, COL_CARD, 0);
     lv_obj_set_style_border_width(card, 0, 0);
     lv_obj_set_style_radius(card, 14, 0);
-    lv_obj_set_style_pad_all(card, 16, 0);
+    lv_obj_set_style_pad_all(card, 14, 0);
     lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(card, 12, 0);
+    lv_obj_set_style_pad_row(card, 8, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *row = lv_obj_create(card);
@@ -78,8 +81,8 @@ void ui_init(void)
     lv_obj_set_style_bg_color(scr, COL_BG, 0);
     lv_obj_set_flex_flow(scr, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(scr, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_all(scr, 14, 0);
-    lv_obj_set_style_pad_row(scr, 12, 0);
+    lv_obj_set_style_pad_all(scr, 12, 0);
+    lv_obj_set_style_pad_row(scr, 8, 0);
 
     // Header: title + grid status badge
     lv_obj_t *hdr = lv_obj_create(scr);
@@ -106,20 +109,21 @@ void ui_init(void)
     lv_obj_set_style_pad_hor(s_grid_badge, 12, 0);
     lv_obj_set_style_pad_ver(s_grid_badge, 6, 0);
 
-    make_metric(scr, "Solar", COL_SOLAR, false, &s_solar);
-    make_metric(scr, "Home",  COL_HOME,  false, &s_home);
-    make_metric(scr, "Grid",  COL_GRID,  true,  &s_grid);
+    make_metric(scr, "Solar",   COL_SOLAR, false, &s_solar);
+    make_metric(scr, "Home",    COL_HOME,  false, &s_home);
+    make_metric(scr, "Grid",    COL_GRID,  true,  &s_grid);
+    make_metric(scr, "Battery", COL_BATT,  true,  &s_batt_pow);
 
     // Battery card
     lv_obj_t *bcard = lv_obj_create(scr);
-    lv_obj_set_size(bcard, lv_pct(100), 240);
+    lv_obj_set_size(bcard, lv_pct(100), 224);
     lv_obj_set_style_bg_color(bcard, COL_CARD, 0);
     lv_obj_set_style_border_width(bcard, 0, 0);
     lv_obj_set_style_radius(bcard, 14, 0);
-    lv_obj_set_style_pad_all(bcard, 18, 0);
+    lv_obj_set_style_pad_all(bcard, 16, 0);
     lv_obj_set_flex_flow(bcard, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(bcard, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(bcard, 8, 0);
+    lv_obj_set_style_pad_row(bcard, 6, 0);
     lv_obj_clear_flag(bcard, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *blabel = lv_label_create(bcard);
@@ -150,6 +154,21 @@ void ui_init(void)
     lv_obj_set_style_text_color(s_batt_state, COL_DIM, 0);
     lv_obj_set_style_text_font(s_batt_state, &lv_font_montserrat_20, 0);
 
+    // Footer status line (boot progress / errors / "Live")
+    s_status = lv_label_create(scr);
+    lv_label_set_text(s_status, "Starting...");
+    lv_obj_set_style_text_color(s_status, COL_DIM, 0);
+    lv_obj_set_style_text_font(s_status, &lv_font_montserrat_20, 0);
+
+    lvgl_port_unlock();
+}
+
+void ui_set_status(const char *msg, bool error)
+{
+    if (!s_status) return;
+    lvgl_port_lock(0);
+    lv_label_set_text(s_status, msg);
+    lv_obj_set_style_text_color(s_status, error ? COL_IMPORT : COL_DIM, 0);
     lvgl_port_unlock();
 }
 
@@ -187,6 +206,17 @@ void ui_update(const tesla_live_status_t *s)
     lv_bar_set_range(s_grid.bar, -(int)s_grid_max, (int)s_grid_max);
     lv_bar_set_value(s_grid.bar, (int)s->grid_power, LV_ANIM_OFF);
 
+    // Battery power (center-zero: charge left/green, discharge right/amber).
+    // battery_power is +discharge / -charge.
+    double battp_abs = fabs(s->battery_power);
+    if (battp_abs > s_battp_max) s_battp_max = battp_abs;
+    snprintf(buf, sizeof(buf), "%.2f kW", battp_abs / 1000.0);
+    lv_label_set_text(s_batt_pow.value, buf);
+    lv_obj_set_style_bg_color(s_batt_pow.bar,
+                              s->battery_power > 0 ? COL_BATT_OUT : COL_BATT, LV_PART_INDICATOR);
+    lv_bar_set_range(s_batt_pow.bar, -(int)s_battp_max, (int)s_battp_max);
+    lv_bar_set_value(s_batt_pow.bar, (int)s->battery_power, LV_ANIM_OFF);
+
     // Battery
     int pct = (int)(s->percentage_charged + 0.5);
     snprintf(buf, sizeof(buf), "%d%%", pct);
@@ -209,6 +239,9 @@ void ui_update(const tesla_live_status_t *s)
     snprintf(buf, sizeof(buf), "GRID %s", on_grid ? "ON" : "OFF");
     lv_label_set_text(s_grid_badge, buf);
     lv_obj_set_style_bg_color(s_grid_badge, on_grid ? COL_EXPORT : COL_IMPORT, 0);
+
+    lv_label_set_text(s_status, LV_SYMBOL_OK " Live");
+    lv_obj_set_style_text_color(s_status, COL_EXPORT, 0);
 
     lvgl_port_unlock();
 }
