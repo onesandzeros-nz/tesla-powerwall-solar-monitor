@@ -17,7 +17,8 @@
 #define COL_IMPORT  lv_color_hex(0xEF5350)   /* drawing from grid */
 #define COL_EXPORT  lv_color_hex(0x66BB6A)   /* sending to grid   */
 
-#define SOLAR_MAX_W   18000.0   /* your array nameplate */
+#define SOLAR_MAX_W       18000.0   /* your solar array nameplate */
+#define BATTERY_CAP_KWH   27.0      /* site_info nameplate_energy_watts (PW3 + Expansion) */
 
 // Bar auto-scale floors (grow to the largest value seen).
 static double s_home_max = 4000.0;
@@ -192,8 +193,9 @@ void ui_update(const tesla_live_status_t *s)
     lv_label_set_text(s_batt_pct, buf);
     lv_bar_set_value(s_soc_bar, pct, LV_ANIM_ON);
 
-    snprintf(buf, sizeof(buf), "%.1f / %.1f kWh",
-             s->energy_left / 1000.0, s->total_pack_energy / 1000.0);
+    // live_status has no energy fields for this site; derive kWh from % of capacity
+    double left_kwh = BATTERY_CAP_KWH * s->percentage_charged / 100.0;
+    snprintf(buf, sizeof(buf), "%.1f / %.1f kWh", left_kwh, BATTERY_CAP_KWH);
     lv_label_set_text(s_batt_kwh, buf);
 
     double batt = s->battery_power / 1000.0;
