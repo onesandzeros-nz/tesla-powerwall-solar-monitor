@@ -154,16 +154,33 @@ static esp_err_t ensure_token(void)
 
 esp_err_t tesla_client_init(void)
 {
-    strlcpy(s_refresh_token, TESLA_REFRESH_TOKEN, sizeof(s_refresh_token));
+    // Tesla rotates refresh tokens, so we persist the rotated one to NVS and
+    // reuse it across reboots. But if a NEW token was just flashed (secrets.h
+    // changed), it must override the stale NVS token — otherwise re-minting a
+    // token has no effect. We detect this by storing the flashed token as a
+    // "seed": when the seed changes, we reset NVS to the flashed token.
+    const char *flashed = TESLA_REFRESH_TOKEN;
+    strlcpy(s_refresh_token, flashed, sizeof(s_refresh_token));
 
-    // A rotated token saved on a previous run takes precedence.
     nvs_handle_t h;
-    if (nvs_open("tesla", NVS_READONLY, &h) == ESP_OK) {
-        char tmp[REFRESH_TOK_MAX];
-        size_t len = sizeof(tmp);
-        if (nvs_get_str(h, "refresh_tok", tmp, &len) == ESP_OK && tmp[0]) {
-            strlcpy(s_refresh_token, tmp, sizeof(s_refresh_token));
-            ESP_LOGI(TAG, "using stored refresh token");
+    if (nvs_open("tesla", NVS_READWRITE, &h) == ESP_OK) {
+        char seed[REFRESH_TOK_MAX] = {0};
+        size_t slen = sizeof(seed);
+        bool have_seed = (nvs_get_str(h, "seed_tok", seed, &slen) == ESP_OK);
+
+        if (!have_seed || strcmp(seed, flashed) != 0) {
+            // First boot, or a freshly flashed token — adopt it, reset NVS.
+            nvs_set_str(h, "seed_tok", flashed);
+            nvs_set_str(h, "refresh_tok", flashed);
+            nvs_commit(h);
+            ESP_LOGI(TAG, "using freshly flashed refresh token");
+        } else {
+            char tmp[REFRESH_TOK_MAX];
+            size_t len = sizeof(tmp);
+            if (nvs_get_str(h, "refresh_tok", tmp, &len) == ESP_OK && tmp[0]) {
+                strlcpy(s_refresh_token, tmp, sizeof(s_refresh_token));
+                ESP_LOGI(TAG, "using stored (rotated) refresh token");
+            }
         }
         nvs_close(h);
     }
