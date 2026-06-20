@@ -1,0 +1,42 @@
+# Target
+CONFIG_IDF_TARGET="esp32p4"
+
+# 16 MB flash + custom 3 MB app partition (TLS + WiFi + later LVGL)
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# PSRAM (needed later for LVGL framebuffers)
+CONFIG_SPIRAM=y
+
+# Verify Tesla's TLS certs against the bundled Mozilla CA store
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+
+# Headroom for TLS handshakes + JSON parsing on the main task
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# Route esp_wifi to the ESP32-C6 over esp-hosted (SDIO).
+# NOTE: the exact symbol name varies by IDF / esp_wifi_remote version. If the
+# build warns this is unknown, set it via `idf.py menuconfig`:
+#   Component config -> Wi-Fi Remote -> choose the esp-hosted transport.
+CONFIG_ESP_WIFI_REMOTE_LIBRARY_HOSTED=y
+
+# Put esp-hosted's SDIO transport buffers in PSRAM, not scarce internal DMA RAM.
+# Without this, LVGL's internal-RAM usage starves the SDIO mempool at boot
+# (assert: sdio_mempool_create ... no mem).
+CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y
+
+# --- Display / LVGL ---
+# PSRAM at 200 MHz HEX for the 480x800 framebuffers — at 20 MHz the MIPI-DSI
+# DPI engine starves ("can't fetch data from external memory fast enough").
+# SPIRAM_SPEED_200M is gated behind the experimental-features flag.
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_200M=y
+
+# LVGL: 16-bit colour + the fonts the UI uses
+CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
+CONFIG_LV_FONT_MONTSERRAT_48=y

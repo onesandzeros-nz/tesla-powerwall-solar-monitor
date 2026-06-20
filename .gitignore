@@ -1,0 +1,18 @@
+# Secrets — never commit
+secrets/tesla_secrets.env
+secrets/*.pem
+secrets/*.key
+firmware/main/secrets.h
+
+# ESP-IDF build output
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/dependencies.lock
+firmware/managed_components/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
